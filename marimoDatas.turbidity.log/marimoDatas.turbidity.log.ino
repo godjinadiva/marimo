@@ -9,8 +9,8 @@
 #define txPin 2 
 SoftwareSerial mySerial(txPin, rxPin);
 
-const char ssid[] = "Galaxy Note92362";
-const char pass[] = "dodrmfl02";
+const char ssid[] = "Wifi id";
+const char pass[] = "password";
 int status = WL_IDLE_STATUS;
 
 // 웹 서버 주소 및 포트 번호 설정
