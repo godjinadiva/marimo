@@ -31,6 +31,11 @@ DallasTemperature sensors(&oneWire);
 
 // 이전 온도 값을 저장할 변수
 float prevTempC = 0;
+float prevTemperature = 0;
+unsigned long lastLoggedDayTurb = 0;
+unsigned long lastLoggedDayTemp = 0;
+int turbidityErrorLogCount = 0;
+int temperatureChangeLogCount = 0;
 
 // 시간 간격 (1시간)
 const unsigned long interval = 3600000; // milliseconds
@@ -39,13 +44,15 @@ unsigned long previousMillis = 0;
 // 탁도센서 오류를 로깅하는 시간 간격 (5초)
 const unsigned long turbidityLogInterval = 5000; // milliseconds
 unsigned long turbidityLogPreviousMillis = 0;
+// 온도 변화를 관찰하는 시간 간격 (1분)
+const unsigned long temperatureChangeInterval = 60000; // milliseconds
+unsigned long temperatureChangePreviousMillis = 0;
 
 // 하루에 허용되는 최대 오류 로그 횟수
 const int maxErrorLogsPerDay = 2;
+// 하루에 허용되는 최대 온도 변화 로그 횟수
+const int maxTemperatureChangeLogsPerDay = 2;
 
-// 오류 로그 횟수와 마지막 로깅된 날짜 저장 변수
-int errorLogCount = 0;
-unsigned long lastLoggedDay = 0;
 
 void setup() {
   // 시리얼 통신 초기화
@@ -80,26 +87,41 @@ void loop() {
  // 현재 날짜 구하기
   unsigned long currentDay = currentMillis / 86400000; // 1일은 86,400,000 밀리초
 
-  // 오류 로그를 찍을지 결정
-  bool shouldLogError = false;
+   // 오류 로그를 찍을지 결정
+  bool shouldLogTurbidityError = false;
 
-  if (currentDay != lastLoggedDay) {
+  if (currentDayTurb != lastLoggedDayTurb) {
     // 새로운 날이 시작될 때, 오류 로그 횟수와 마지막 로깅된 날짜 초기화
-    errorLogCount = 0;
-    lastLoggedDay = currentDay;
+    turbidityErrorLogCount = 0;
+    lastLoggedDayTurb = currentDayTurb;
   }
 
-  if (errorLogCount < maxErrorLogsPerDay) {
+  if (turbidityErrorLogCount < maxErrorLogsPerDay) {
     // 허용된 최대 횟수 내에서만 오류 로그를 찍음
-    shouldLogError = true;
+    shouldLogTurbidityError = true;
   }
 
   // 5초마다 탁도 오류 로그를 전송
   if (currentMillis - turbidityLogPreviousMillis >= turbidityLogInterval) {
     turbidityLogPreviousMillis = currentMillis;
-     if (shouldLogError && (turbidityValue < 100 || turbidityValue > 900)) {
+    if (shouldLogTurbidityError && (turbidityValue < 100 || turbidityValue > 900)) {
       logTurbidityError(turbidityValue);
-      errorLogCount++; // 오류 로그 횟수 증가
+      turbidityErrorLogCount++; // 오류 로그 횟수 증가
+    }
+  }
+
+  // 온도 변화를 관찰하여 온도가 5도 이상 내려갈 때 로그를 보냄
+  if (currentMillis - temperatureChangePreviousMillis >= temperatureChangeInterval) {
+    temperatureChangePreviousMillis = currentMillis;
+    sensors.requestTemperatures();
+    float currentTemperature = sensors.getTempCByIndex(0);
+    
+    if (currentTemperature - prevTemperature >= 5) {
+      if (temperatureChangeLogCount < maxTemperatureChangeLogsPerDay) {
+        logTemperatureChange(prevTemperature, currentTemperature);
+        temperatureChangeLogCount++;
+      }
+      prevTemperature = currentTemperature;
     }
   }
 
@@ -163,6 +185,29 @@ void logTurbidityError(int turbidityValue) {
     client.print(payload);
 
     Serial.println("Turbidity Error Log Sent to Server");
+  } else {
+    Serial.println("Connection to server failed");
+  }
+}
+void logTemperatureChange(float oldTemperature, float newTemperature) {
+  // JSON 데이터 형식 구성
+  String logData = "{\"marimoId\": 1, \"stat\": \"temperature_change\", \"oldValue\": " + String(oldTemperature) + ", \"newValue\": " + String(newTemperature) + "}";
+
+  // HTTP POST 요청 준비
+  String url = "/log/3"; // Endpoint for temperature change log
+  String payload = logData;
+
+  // 웹 서버로 HTTP POST 요청 전송
+  if (client.connect(serverAddress, serverPort)) {
+    client.print("POST " + url + " HTTP/1.1\r\n");
+    client.print("Host: " + String(serverAddress) + ":" + String(serverPort) + "\r\n");
+    client.print("Content-Type: application/json\r\n");
+    client.print("Content-Length: ");
+    client.print(payload.length());
+    client.print("\r\n\r\n");
+    client.print(payload);
+
+    Serial.println("Temperature Change Log Sent to Server");
   } else {
     Serial.println("Connection to server failed");
   }
