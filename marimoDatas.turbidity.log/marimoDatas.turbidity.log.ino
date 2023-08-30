@@ -62,6 +62,29 @@ const int maxErrorLogsPerDay = 2;
 // 하루에 허용되는 최대 온도 변화 로그 횟수
 const int maxTemperatureChangeLogsPerDay = 2;
 
+// LCD5110 라이브러리 설정
+LCD5110 myLCD(8, 9, 10, 11, 12);
+
+// 조도, 탁도, 온도 임계값 설정
+const int thresholdLight = 200;   // 조도 임계값
+const int thresholdTurbidity = 350; // 탁도 임계값
+const float thresholdTemperature = 30.0; // 온도 임계값
+
+// 표정 이미지 데이터
+const byte sadFace[5] = {
+    B00111100,
+    B01000010,
+    B10100101,
+    B10000001,
+    B10000001
+};
+const byte smileFace[5] = {
+    B00111100,
+    B01000010,
+    B10100101,
+    B10000001,
+    B01111110
+};
 
 void setup() {
   // 시리얼 통신 초기화
@@ -190,8 +213,31 @@ void loop() {
     }
   }
 
+    // 표정 선택
+  bool isSad = (lightValue < thresholdLight) || (turbidityValue > thresholdTurbidity) || (temperature >= thresholdTemperature);
+
+  // 화면 지우기
+  myLCD.clear();
+
+  // 표정 표시
+  if (isSad) {
+    displayImage(sadFace);
+  } else {
+    // 기본 표정 표시 (웃는 얼굴 등)
+    displayImage(smileFace);
+  }
+
+
   // 잠시 딜레이
   delay(1000);
+}
+// 표정 이미지 출력 함수
+void displayImage(const byte* image) {
+  for (int row = 0; row < 5; row++) {
+    for (int col = 0; col < 8; col++) {
+      myLCD.drawBitmap(col * 8, row * 8, image, 8, 8);
+    }
+  }
 }
 
 void sendLog(const String& logType, const String& logValue = "") {
