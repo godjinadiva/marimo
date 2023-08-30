@@ -40,6 +40,13 @@ unsigned long previousMillis = 0;
 const unsigned long turbidityLogInterval = 5000; // milliseconds
 unsigned long turbidityLogPreviousMillis = 0;
 
+// 하루에 허용되는 최대 오류 로그 횟수
+const int maxErrorLogsPerDay = 2;
+
+// 오류 로그 횟수와 마지막 로깅된 날짜 저장 변수
+int errorLogCount = 0;
+unsigned long lastLoggedDay = 0;
+
 void setup() {
   // 시리얼 통신 초기화
   Serial.begin(9600);
@@ -70,12 +77,29 @@ void loop() {
   int turbidityValue = analogRead(TURBIDITY_PIN);
   Serial.print("탁도 값: ");
   Serial.println(turbidityValue);
+ // 현재 날짜 구하기
+  unsigned long currentDay = currentMillis / 86400000; // 1일은 86,400,000 밀리초
+
+  // 오류 로그를 찍을지 결정
+  bool shouldLogError = false;
+
+  if (currentDay != lastLoggedDay) {
+    // 새로운 날이 시작될 때, 오류 로그 횟수와 마지막 로깅된 날짜 초기화
+    errorLogCount = 0;
+    lastLoggedDay = currentDay;
+  }
+
+  if (errorLogCount < maxErrorLogsPerDay) {
+    // 허용된 최대 횟수 내에서만 오류 로그를 찍음
+    shouldLogError = true;
+  }
 
   // 5초마다 탁도 오류 로그를 전송
   if (currentMillis - turbidityLogPreviousMillis >= turbidityLogInterval) {
     turbidityLogPreviousMillis = currentMillis;
-    if (turbidityValue < 100 || turbidityValue > 900) {
+     if (shouldLogError && (turbidityValue < 100 || turbidityValue > 900)) {
       logTurbidityError(turbidityValue);
+      errorLogCount++; // 오류 로그 횟수 증가
     }
   }
 
