@@ -3,6 +3,12 @@
 #include <DallasTemperature.h>
 #include <WiFiEsp.h>
 #include <SoftwareSerial.h>
+#include <LCD5110_Graph.h> // LCD5110 라이브러리를 설치하고 포함시켜야 함
+#include <Adafruit_NeoPixel.h> // Neopixel 라이브러리를 설치하고 포함시켜야 함
+
+#define NEOPIXEL_PIN 6
+#define NEOPIXEL_NUM_LEDS 8
+Adafruit_NeoPixel neopixels = Adafruit_NeoPixel(NEOPIXEL_NUM_LEDS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
 // WiFi 정보 설정 
 #define rxPin 3 
@@ -36,6 +42,9 @@ unsigned long lastLoggedDayTurb = 0;
 unsigned long lastLoggedDayTemp = 0;
 int turbidityErrorLogCount = 0;
 int temperatureChangeLogCount = 0;
+
+bool neopixelState = false; // Neopixel 상태 저장 변수
+bool lastNeopixelState = false; // 이전 Neopixel 상태 저장 변수
 
 // 시간 간격 (1시간)
 const unsigned long interval = 3600000; // milliseconds
@@ -74,6 +83,11 @@ void setup() {
 
   // DS18B20 온도센서 초기화
   sensors.begin();
+
+  // Neopixel 초기화
+  neopixels.begin();
+  neopixels.clear();
+  neopixels.show();
 }
 
 void loop() {
@@ -90,10 +104,10 @@ void loop() {
    // 오류 로그를 찍을지 결정
   bool shouldLogTurbidityError = false;
 
-  if (currentDayTurb != lastLoggedDayTurb) {
+  if (currentDay != lastLoggedDayTurb) {
     // 새로운 날이 시작될 때, 오류 로그 횟수와 마지막 로깅된 날짜 초기화
     turbidityErrorLogCount = 0;
-    lastLoggedDayTurb = currentDayTurb;
+    lastLoggedDayTurb = currentDay;
   }
 
   if (turbidityErrorLogCount < maxErrorLogsPerDay) {
@@ -104,25 +118,39 @@ void loop() {
   // 5초마다 탁도 오류 로그를 전송
   if (currentMillis - turbidityLogPreviousMillis >= turbidityLogInterval) {
     turbidityLogPreviousMillis = currentMillis;
-    if (shouldLogTurbidityError && (turbidityValue < 100 || turbidityValue > 900)) {
+    if (shouldLogTurbidityError && (turbidityValue < 50 || turbidityValue > 900)) {
       logTurbidityError(turbidityValue);
       turbidityErrorLogCount++; // 오류 로그 횟수 증가
     }
   }
 
-  // 온도 변화를 관찰하여 온도가 5도 이상 내려갈 때 로그를 보냄
+  // 온도 변화를 관찰하여 온도가 3도 이상 내려갈 때 로그를 보냄
   if (currentMillis - temperatureChangePreviousMillis >= temperatureChangeInterval) {
     temperatureChangePreviousMillis = currentMillis;
     sensors.requestTemperatures();
     float currentTemperature = sensors.getTempCByIndex(0);
     
-    if (currentTemperature - prevTemperature >= 5) {
+    if (currentTemperature - prevTemperature >= 3) {
       if (temperatureChangeLogCount < maxTemperatureChangeLogsPerDay) {
         logTemperatureChange(prevTemperature, currentTemperature);
         temperatureChangeLogCount++;
       }
       prevTemperature = currentTemperature;
     }
+  }
+    // 스위치를 이용하여 Neopixel 조명 상태 확인
+  neopixelState = digitalRead(NEOPIXEL_PIN) == HIGH;
+
+  // Neopixel 상태가 변경되었을 때 로그 전송
+  if (neopixelState != lastNeopixelState) {
+    if (neopixelState) {
+      // 조명이 켜진 경우 로그 전송
+      logNeopixelOn();
+    } else {
+      // 조명이 꺼진 경우 로그 전송
+      logNeopixelOff();
+    }
+    lastNeopixelState = neopixelState; // 상태 업데이트
   }
 
   // 1시간마다 전체 마리모 데이터를 전송
@@ -166,48 +194,50 @@ void loop() {
   delay(1000);
 }
 
-void logTurbidityError(int turbidityValue) {
+void sendLog(const String& logType, const String& logValue = "") {
   // JSON 데이터 형식 구성
-  String logData = "{\"marimoId\": 1, \"stat\": \"turbidity_error\", \"value\": " + String(turbidityValue) + "}";
-
-  // HTTP POST 요청 준비
-  String url = "/log/2"; // Endpoint for turbidity error log
-  String payload = logData;
-
-  // 웹 서버로 HTTP POST 요청 전송
-  if (client.connect(serverAddress, serverPort)) {
-    client.print("POST " + url + " HTTP/1.1\r\n");
-    client.print("Host: " + String(serverAddress) + ":" + String(serverPort) + "\r\n");
-    client.print("Content-Type: application/json\r\n");
-    client.print("Content-Length: ");
-    client.print(payload.length());
-    client.print("\r\n\r\n");
-    client.print(payload);
-
-    Serial.println("Turbidity Error Log Sent to Server");
-  } else {
-    Serial.println("Connection to server failed");
+  String logData = "{\"marimoId\": 1, \"stat\": \"" + logType + "\"";
+  if (!logValue.isEmpty()) {
+    logData += ", \"value\": " + logValue;
   }
-}
-void logTemperatureChange(float oldTemperature, float newTemperature) {
-  // JSON 데이터 형식 구성
-  String logData = "{\"marimoId\": 1, \"stat\": \"temperature_change\", \"oldValue\": " + String(oldTemperature) + ", \"newValue\": " + String(newTemperature) + "}";
+  logData += "}";
 
   // HTTP POST 요청 준비
-  String url = "/log/3"; // Endpoint for temperature change log
-  String payload = logData;
+  String url;
 
+  if (logType == "neopixel_on" || logType == "neopixel_off") {
+    url = "/log/1"; // Neopixel 로그
+  } else if (logType == "turbidity_error") {
+    if (turbidityErrorLogCount < maxErrorLogsPerDay) {
+      url = "/log/2"; // Turbidity 오류 로그
+      turbidityErrorLogCount++;
+    } else {
+      return; // maxErrorLogsPerDay를 초과하면 로그를 보내지 않음
+    }
+  } else if (logType == "temperature_change") {
+    if (temperatureChangeLogCount < maxTemperatureChangeLogsPerDay) {
+      url = "/log/3"; // 온도 변화 로그
+      temperatureChangeLogCount++;
+    } else {
+      return; // maxTemperatureChangeLogsPerDay를 초과하면 로그를 보내지 않음
+    }
+  } else {
+    // 알 수 없는 로그 유형인 경우 처리
+    return;
+  }
+
+  // 로그 전송
   // 웹 서버로 HTTP POST 요청 전송
   if (client.connect(serverAddress, serverPort)) {
     client.print("POST " + url + " HTTP/1.1\r\n");
     client.print("Host: " + String(serverAddress) + ":" + String(serverPort) + "\r\n");
     client.print("Content-Type: application/json\r\n");
     client.print("Content-Length: ");
-    client.print(payload.length());
+    client.print(logData.length());
     client.print("\r\n\r\n");
-    client.print(payload);
+    client.print(logData);
 
-    Serial.println("Temperature Change Log Sent to Server");
+    Serial.println(logType + " Log Sent to Server");
   } else {
     Serial.println("Connection to server failed");
   }
