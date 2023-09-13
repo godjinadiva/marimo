@@ -245,10 +245,8 @@ void loop() {
   delay(1000);
 }
 
-void logTurbidityError(int turbidityValue) {
 void sendLog(const String& logType, const String& logValue = "") {
   // JSON 데이터 형식 구성
-  String logData = "{\"marimoId\": 1, \"stat\": \"turbidity_error\", \"value\": " + String(turbidityValue) + "}";
   String logData = "{\"marimoId\": 1, \"stat\": \"" + logType + "\"";
   if (!logValue.isEmpty()) {
     logData += ", \"value\": " + logValue;
@@ -256,20 +254,6 @@ void sendLog(const String& logType, const String& logValue = "") {
   logData += "}";
 
   // HTTP POST 요청 준비
-  String url = "/log/2"; // Endpoint for turbidity error log
-  String payload = logData;
-
-  // 웹 서버로 HTTP POST 요청 전송
-  if (client.connect(serverAddress, serverPort)) {
-    client.print("POST " + url + " HTTP/1.1\r\n");
-    client.print("Host: " + String(serverAddress) + ":" + String(serverPort) + "\r\n");
-    client.print("Content-Type: application/json\r\n");
-    client.print("Content-Length: ");
-    client.print(payload.length());
-    client.print("\r\n\r\n");
-    client.print(payload);
-
-    Serial.println("Turbidity Error Log Sent to Server");
   String url;
 
   if (logType == "neopixel_on" || logType == "neopixel_off") {
@@ -289,18 +273,9 @@ void sendLog(const String& logType, const String& logValue = "") {
       return; // maxTemperatureChangeLogsPerDay를 초과하면 로그를 보내지 않음
     }
   } else {
-    Serial.println("Connection to server failed");
     // 알 수 없는 로그 유형인 경우 처리
     return;
   }
-}
-void logTemperatureChange(float oldTemperature, float newTemperature) {
-  // JSON 데이터 형식 구성
-  String logData = "{\"marimoId\": 1, \"stat\": \"temperature_change\", \"oldValue\": " + String(oldTemperature) + ", \"newValue\": " + String(newTemperature) + "}";
-
-  // HTTP POST 요청 준비
-  String url = "/log/3"; // Endpoint for temperature change log
-  String payload = logData;
 
   // 로그 전송
   // 웹 서버로 HTTP POST 요청 전송
@@ -309,16 +284,12 @@ void logTemperatureChange(float oldTemperature, float newTemperature) {
     client.print("Host: " + String(serverAddress) + ":" + String(serverPort) + "\r\n");
     client.print("Content-Type: application/json\r\n");
     client.print("Content-Length: ");
-    client.print(payload.length());
     client.print(logData.length());
     client.print("\r\n\r\n");
-    client.print(payload);
     client.print(logData);
 
-    Serial.println("Temperature Change Log Sent to Server");
     Serial.println(logType + " Log Sent to Server");
   } else {
     Serial.println("Connection to server failed");
   }
-}
 }
