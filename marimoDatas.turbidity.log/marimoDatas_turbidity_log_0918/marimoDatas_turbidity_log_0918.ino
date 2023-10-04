@@ -20,10 +20,10 @@ WiFiEspClient client;
 #define txPin 2
 #define ONE_WIRE_BUS 4
 #define NEOPIXEL_PIN1 6 // 상태 알려주는 네오픽셀
-#define NEOPIXEL_PIN2 5 // 어항 밑 네오픽셀
-#define BUTTON_pin 7 // 버튼을 8번 핀에 연결
-#define NEOPIXEL_NUM_LEDS1 16
-#define NEOPIXEL_NUM_LEDS2 16
+#define NEOPIXEL_PIN2 7 // 어항 밑 네오픽셀
+#define BUTTON_pin 8 // 버튼을 8번 핀에 연결
+#define NEOPIXEL_NUM_LEDS1 150
+#define NEOPIXEL_NUM_LEDS2 150
 #define NEOPIXEL_TEMPERATURE_LED 4
 #define NEOPIXEL_LIGHT_LED 8
 #define NEOPIXEL_TURBIDITY_LED 12
@@ -37,7 +37,7 @@ const int TURBIDITY_PIN = A1;
 #define GREEN_COLOR 0x00FF00  // Green color
 
 // 여러가지 관련 설정
-SoftwareSerial mySerial(txPin, rxPin); // 통신 관련 설정
+SoftwareSerial mySerial(rxPin, txPin); // 통신 관련 설정
 Adafruit_NeoPixel neopixels1 = Adafruit_NeoPixel(NEOPIXEL_NUM_LEDS1, NEOPIXEL_PIN1, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel neopixels2 = Adafruit_NeoPixel(NEOPIXEL_NUM_LEDS2, NEOPIXEL_PIN2, NEO_GRB + NEO_KHZ800);
 OneWire oneWire(ONE_WIRE_BUS); // DS18B20 온도센서 관련 설정
@@ -46,9 +46,12 @@ DallasTemperature sensors(&oneWire);
 // 이전 온도 값을 저장할 변수
 float prevTempC = 0;
 float prevTemperature = 0;
+-unsigned long lastLoggedDayTurb = 0;
+unsigned long lastLoggedDayTemp = 0;
+int temperatureChangeLogCount = 0;
+bool neopixelState = false; // Neopixel 상태 저장 변수
+bool lastNeopixelState = false; // 이전 Neopixel 상태 저장 변수
 unsigned long lastLoggedHour = 0; // 마지막으로 로그를 보낸 시간
-bool LED_state = true; // LED 상태 저장 변수 (초기에 켜진 상태)
-bool isNeopixelOn = true; // 조명 상태를 나타내는 변수
 int lastButtonState = LOW;
 int buttonState = LOW;
 
@@ -90,8 +93,8 @@ void setup() {
   // DS18B20 온도센서 초기화
   sensors.begin();
 
-  // Neopixel 관련 코드
-  pinMode(BUTTON_pin, INPUT_PULLUP); // 입력으로 설정
+    // Neopixel 관련 코드
+   pinMode(BUTTON_pin, INPUT); // 입력으로 설정
   // Neopixel 초기화
   neopixels1.begin();
   neopixels2.begin();
@@ -270,5 +273,4 @@ void setColor(Adafruit_NeoPixel& strip, int pixelIndex, uint32_t color) {
     strip.setPixelColor(pixelIndex, color);
   }
 }
-
 
